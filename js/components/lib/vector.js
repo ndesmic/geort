@@ -167,7 +167,15 @@ export function multiplyVector(vec, s) {
 	return [
 		vec[0] * s,
 		vec[1] * s,
-		vec[2] * s
+		vec[2] * s,
+	];
+}
+
+export function componentwiseMultiplyVector(a, b){
+	return [
+		a[0] * b[0],
+		a[1] * b[1],
+		a[2] * b[2]
 	];
 }
 
