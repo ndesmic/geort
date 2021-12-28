@@ -163,7 +163,7 @@ export function subtractVector(a, b) {
 	];
 }
 
-export function multiplyVector(vec, s) {
+export function scaleVector(vec, s) {
 	return [
 		vec[0] * s,
 		vec[1] * s,
@@ -294,7 +294,7 @@ export function polyCentroid(points) {
 	];
 }
 
-export function reflect(vec, normal) {
+export function reflectVector(vec, normal) {
 	return [
 		vec[0] - 2 * dotVector(vec, normal) * normal[0],
 		vec[1] - 2 * dotVector(vec, normal) * normal[1],

@@ -1,7 +1,21 @@
 import { Camera } from "./entity/camera.js";
 import { Light } from "./entity/light.js";
-import { dotVector, addVector, subtractVector, multiplyVector, normalizeVector, getVectorMagnitude, componentwiseMultiplyVector } from "./lib/vector.js";
+import { 
+	dotVector, 
+	addVector, 
+	subtractVector, 
+	scaleVector, 
+	normalizeVector, 
+	getVectorMagnitude, 
+	componentwiseMultiplyVector,
+	reflectVector
+} from "./lib/vector.js";
 import { clamp } from "./lib/math-helpers.js";
+
+const trueReflections = true;
+const MAX_BOUNCES = 3;
+const BACKGROUND_COLOR = [0.1, 0.1, 0.1, 1]; //cornflower blue
+const BACKGROUND_LIGHT = [0.1, 0.1, 0.1, 1];
 
 export class WcGeoRt extends HTMLElement {
 	#context;
@@ -17,7 +31,7 @@ export class WcGeoRt extends HTMLElement {
 		element.cacheDom = element.cacheDom.bind(element);
 		element.createShadowDom = element.createShadowDom.bind(element);
 		element.createCameras = element.createCameras.bind(element);
-		element.createMeshes = element.createMeshes.bind(element);
+		element.createObjects = element.createObjects.bind(element);
 		element.createLights = element.createLights.bind(element);
 		element.render = element.render.bind(element);
 		element.raytrace = element.raytrace.bind(element);
@@ -29,7 +43,7 @@ export class WcGeoRt extends HTMLElement {
 
 
 		this.createCameras();
-		this.createMeshes();
+		this.createObjects();
 		this.createLights();
 
 		this.#context = this.dom.canvas.getContext("2d");
@@ -48,7 +62,7 @@ export class WcGeoRt extends HTMLElement {
 	createCameras(){
 		this.cameras = {
 			default: new Camera({
-				position: [0, 0, -2],
+				position: [0, 0.75, -2],
 				screenHeight: this.#height,
 				screenWidth: this.#width,
 				near: 0,
@@ -59,24 +73,37 @@ export class WcGeoRt extends HTMLElement {
 	createLights(){
 		this.lights = {
 			light1: new Light({
-				position: [0.75,0,-2],
-				color: [1,1,1,1]
+				position: [1,3,-1],
+				color: [0.3,0.3,0.3,0.3]
 			}),
+			light2: new Light({
+				position: [-0.75, 0.5, -2],
+				color: [0.1, 0.1, 0.1, 1]
+			})
 		};
 	}
-	createMeshes(){
-		this.meshes = {
+	createObjects(){
+		this.objects = {
 			sphere: {
+				type: "sphere",
 				position: [0,0,0],
 				radius: 1,
 				color: [0, 1, 0, 1],
-				specularity: 1,
-				gloss: 100
+				specularity: 0.3,
 			},
-			sphere1: {
-				position: [0.75,0,-1.5],
-				radius: 0.1,
-				color: [1,0,1,1]
+			sphere2: {
+				type: "sphere",
+				position: [2, 0, 0],
+				radius: 0.25,
+				color: [1, 0, 0.5, 1],
+				specularity: 0.1,
+			},
+			plane: {
+				type: "plane",
+				normal: [0,1,0],
+				offset: -1,
+				color: [0.3,0.3,0.3,1],
+				specularity: 0.9
 			}
 		};
 	}
@@ -96,13 +123,20 @@ export class WcGeoRt extends HTMLElement {
 
 		for (let row = 0; row < this.#height; row++) {
 			for (let col = 0; col < this.#width; col++) {
-				const xDelta = multiplyVector(this.cameras.default.getRightDirection(), (col - halfPixelWidth) * pixelWidthRatio);
-				const yDelta = multiplyVector(multiplyVector(this.cameras.default.getUpDirection(), -1), (row - halfPixelHeight) * pixelHeightRatio);
+				const xDelta = scaleVector(this.cameras.default.getRightDirection(), (col - halfPixelWidth) * pixelWidthRatio);
+				const yDelta = scaleVector(scaleVector(this.cameras.default.getUpDirection(), -1), (row - halfPixelHeight) * pixelHeightRatio);
 
 				const ray = {
 					origin: this.cameras.default.getPosition(),
 					direction: normalizeVector(addVector(addVector(this.cameras.default.getForwardDirection(), xDelta), yDelta))
 				};
+
+				if(row == this.#height -1 && col == this.#width / 2){
+					console.log("bottom");
+				}
+				if (row == 2 * this.#height / 3 && col == 0) {
+					console.log("left");
+				}
 
 				let color = this.raytrace(ray);
 
@@ -116,26 +150,50 @@ export class WcGeoRt extends HTMLElement {
 
 		this.#context.putImageData(pixelData, 0, 0);
 	}
-	raytrace(ray){
-		const intersection = this.intersectObjects(ray);
-
-		if (intersection.distance === Infinity) {
-			return [255, 255, 255];
+	raytrace(ray, bounceCounter = MAX_BOUNCES){
+		if(bounceCounter <= 0){
+			return BACKGROUND_COLOR;
 		}
 
-		const collisionPoint = addVector(ray.origin, multiplyVector(ray.direction, intersection.distance));
+		const intersection = this.intersectObjects(ray);
 
-		return this.getSurfaceInfo(collisionPoint, intersection.mesh, ray);
+		if (intersection.distance === Infinity || intersection.distance === -Infinity) {
+			return BACKGROUND_COLOR;
+		}
+
+		const collisionPoint = addVector(ray.origin, scaleVector(ray.direction, intersection.distance));
+
+		return this.getSurfaceInfo(collisionPoint, intersection.object, ray, bounceCounter);
 	}
 	intersectObjects(ray) {
-		let closest = { distance: Infinity, mesh: null };
-		for (let mesh of Object.values(this.meshes)) {
-			const distance = this.intersectSphere(ray, mesh);
-			if (distance != undefined && distance < closest.distance) {
-				closest = { distance, mesh };
+		let closest = { distance: Infinity, object: null };
+		for (let object of Object.values(this.objects)) {
+			let distance;
+			switch(object.type){
+				case "sphere": {
+					distance = this.intersectSphere(ray, object);
+					break;
+				}
+				case "plane": {
+					distance = this.intersectPlane(ray, object);
+					break;
+				}
+			}
+			if (distance != undefined && distance < closest.distance && distance > 0.001) {
+				closest = { distance, object };
 			}
 		}
 		return closest;
+	}
+	getNormal(collisionPosition, object){
+		switch(object.type){
+			case "sphere": {
+				return normalizeVector(subtractVector(collisionPosition, object.position));
+			}
+			case "plane": {
+				return normalizeVector(object.normal);
+			}
+		}
 	}
 	intersectSphere(ray, sphere) {
 		const a = dotVector(ray.direction, ray.direction);
@@ -153,22 +211,32 @@ export class WcGeoRt extends HTMLElement {
 
 		return Math.min(s1, s2);
 	}
-	getSurfaceInfo(collisionPosition, mesh, ray){
-		let color = [0,0,0];
+	intersectPlane(ray, plane){
+		return (plane.offset - dotVector(ray.origin, plane.normal)) / dotVector(ray.direction, plane.normal);
+	}
+	getSurfaceInfo(collisionPosition, object, ray, bounceCounter){
+		let color = componentwiseMultiplyVector(BACKGROUND_LIGHT, object.color);
 		for(const light of Object.values(this.lights)){
 			if(this.isVisible(collisionPosition, light.position)){
-				const normal = normalizeVector(subtractVector(collisionPosition, mesh.position));
-				const toLight = subtractVector(light.position, collisionPosition);
-				const lightAmount = multiplyVector(light.color, dotVector(toLight, normal));
-				color = addVector(color, componentwiseMultiplyVector(mesh.color, lightAmount));
+				const normal = this.getNormal(collisionPosition, object);
+				const toLight = normalizeVector(subtractVector(light.position, collisionPosition));
+				const lightAmount = scaleVector(light.color, dotVector(toLight, normal));
+				color = addVector(color, componentwiseMultiplyVector(object.color, lightAmount));
 
-				if(mesh.specularity){
-					const toCamera = normalizeVector(subtractVector(ray.origin, collisionPosition));
-					const halfVector = normalizeVector(addVector(toLight, toCamera));
-					const baseSpecular = clamp(dotVector(halfVector, normal), 0.0, 1.0);
-					const specularMagnitude = baseSpecular ** mesh.gloss;
-					const specularLight = componentwiseMultiplyVector(light.color, [specularMagnitude, specularMagnitude, specularMagnitude, 1.0]);
-					color = addVector(color, specularLight);
+				if(object.specularity){
+					if(trueReflections){
+						const reflectionDirection = reflectVector(ray.direction, normal);
+						const reflectionColor = this.raytrace({ origin: collisionPosition, direction: reflectionDirection }, bounceCounter - 1);
+						const specularLight = clamp(scaleVector(reflectionColor, object.specularity), 0.0, 1.0);
+						color = addVector(color, specularLight);
+					} else {
+						const toCamera = normalizeVector(subtractVector(ray.origin, collisionPosition));
+						const halfVector = normalizeVector(addVector(toLight, toCamera));
+						const baseSpecular = clamp(dotVector(halfVector, normal), 0.0, 1.0);
+						const specularMagnitude = baseSpecular ** object.gloss;
+						const specularLight = componentwiseMultiplyVector(light.color, [specularMagnitude, specularMagnitude, specularMagnitude, 1.0]);
+						color = addVector(color, specularLight);
+					}
 				}
 			}
 		}
