@@ -1,3 +1,5 @@
+import { subtractVector, crossVector, getVectorMagnitude, normalizeVector, dotVector } from "./vector.js";
+
 export const TWO_PI = Math.PI * 2
 export const QUARTER_TURN = Math.PI / 2;
 
@@ -54,4 +56,36 @@ export function normalizeNumber(num, len) {
 	num = parseFloat(num.toFixed(len));
 	num = num === -0 ? 0 : num;
 	return num;
+}
+
+//geometry
+
+//order matters! CCW from bottom to top
+export function getTriangleNormal(pointA, pointB, pointC) {
+	const vector1 = subtractVector(pointC, pointA);
+	const vector2 = subtractVector(pointB, pointA);
+	return normalizeVector(crossVector(vector1, vector2));
+}
+
+//order matters! CCW from bottom to top
+export function getTriangleCrossProduct(pointA, pointB, pointC) {
+	const vector1 = subtractVector(pointC, pointA);
+	const vector2 = subtractVector(pointB, pointA);
+	return crossVector(vector1, vector2);
+}
+
+//point needs to be coplanar
+export function getBarycentricCoordinates(triangle, point) {
+	const cross = getTriangleCrossProduct(...triangle);
+	const n = normalizeVector(cross);
+	const a0 = dotVector(n, getTriangleCrossProduct(triangle[1], triangle[2], point)) / 2;
+	const a1 = dotVector(n, getTriangleCrossProduct(triangle[0], point, triangle[2])) / 2;
+	const a2 = dotVector(n, getTriangleCrossProduct(triangle[0], triangle[1], point)) / 2;
+	const a = getVectorMagnitude(cross) / 2;
+
+	return [
+		a0 / a,
+		a1 / a,
+		a2 / a
+	];
 }
