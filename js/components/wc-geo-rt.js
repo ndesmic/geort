@@ -115,14 +115,17 @@ export class WcGeoRt extends HTMLElement {
 					[0,0,1,1]
 				]
 			}),*/
-			mesh: new Mesh(cube),
-			/*
+			mesh: new Mesh({
+				...cube,
+				specularity: 0.6
+			}),
 			sphere: {
 				type: "sphere",
-				position: [0,0,4],
-				radius: 2,
+				position: [-1,0,-1],
+				radius: 0.25,
+				specularity: 1,
 				color: [0,1,0,1]
-			}*/
+			}
 		};
 	}
 	cacheDom() {
